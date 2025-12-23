@@ -43,6 +43,8 @@ ALLOWED_COMMANDS = {
     "pkill",  # For killing dev servers; validated separately
     # Network/API testing
     "curl",
+    # JSON parsing (for API responses)
+    "jq",
     # File operations
     "mv",
     "rm",  # Use with caution

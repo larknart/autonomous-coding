@@ -17,8 +17,8 @@ ls -la
 # 3. Read the project specification to understand what you're building
 cat app_spec.txt
 
-# 4. Read the feature list to see all work
-cat feature_list.json | head -50
+# 4. Get progress statistics (passing/total counts)
+curl -s http://localhost:8765/features/stats | jq
 
 # 5. Read progress notes from previous sessions
 cat claude-progress.txt
@@ -26,8 +26,8 @@ cat claude-progress.txt
 # 6. Check recent git history
 git log --oneline -20
 
-# 7. Count remaining tests
-cat feature_list.json | grep '"passes": false' | wc -l
+# 7. Get the next feature to work on
+curl -s http://localhost:8765/features/next | jq
 ```
 
 Understanding the `app_spec.txt` is critical - it contains the full requirements
@@ -53,7 +53,12 @@ IMPORTANT! ALWAYS start the app on port 3000! Use npx kill-port 3000 to free up 
 The previous session may have introduced bugs. Before implementing anything
 new, you MUST run verification tests.
 
-Run 1-2 of the feature tests marked as `"passes": true` that are most core to the app's functionality to verify they still work.
+Run 1-2 of the features marked as passing that are most core to the app's functionality to verify they still work.
+
+To get passing features for regression testing:
+```bash
+curl -s "http://localhost:8765/features?passes=true&limit=3" | jq '.features[] | {id, name, description}'
+```
 For example, if this were a chat app, you should perform a test that logs into the app, sends a message, and gets a response.
 
 **If you find ANY issues (functional or visual):**
@@ -72,7 +77,12 @@ For example, if this were a chat app, you should perform a test that logs into t
 
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
-Look at feature_list.json and find the highest-priority feature with "passes": false.
+Get the next feature to implement from the API:
+
+```bash
+# Get the highest-priority pending feature
+curl -s http://localhost:8765/features/next | jq
+```
 
 Focus on completing one feature perfectly and completing its testing steps in this session before moving on to other features.
 It's ok if you only complete one feature in this session, as there will be more sessions later that continue to make progress.
@@ -189,31 +199,28 @@ For API endpoints used by this feature:
 - Verify response contains actual database data
 - Empty database = empty response (not pre-populated mock data)
 
-### STEP 7: UPDATE feature_list.json (CAREFULLY!)
+### STEP 7: UPDATE FEATURE STATUS (CAREFULLY!)
 
 **YOU CAN ONLY MODIFY ONE FIELD: "passes"**
 
-After thorough verification, change:
+After thorough verification, mark the feature as passing via the API:
 
-```json
-"passes": false
-```
-
-to:
-
-```json
-"passes": true
+```bash
+# Mark feature #42 as passing (replace 42 with the actual feature ID)
+curl -X PATCH http://localhost:8765/features/42 \
+  -H "Content-Type: application/json" \
+  -d '{"passes": true}'
 ```
 
 **NEVER:**
 
-- Remove tests
-- Edit test descriptions
-- Modify test steps
-- Combine or consolidate tests
-- Reorder tests
+- Delete features
+- Edit feature descriptions
+- Modify feature steps
+- Combine or consolidate features
+- Reorder features
 
-**ONLY CHANGE "passes" FIELD AFTER VERIFICATION WITH SCREENSHOTS.**
+**ONLY MARK A FEATURE AS PASSING AFTER VERIFICATION WITH SCREENSHOTS.**
 
 ### STEP 8: COMMIT YOUR PROGRESS
 
@@ -225,7 +232,7 @@ git commit -m "Implement [feature name] - verified end-to-end
 
 - Added [specific changes]
 - Tested with browser automation
-- Updated feature_list.json: marked test #X as passing
+- Marked feature #X as passing via API
 - Screenshots in verification/ directory
 "
 ```
@@ -246,7 +253,7 @@ Before context fills up:
 
 1. Commit all working code
 2. Update claude-progress.txt
-3. Update feature_list.json if tests verified
+3. Mark features as passing via API if tests verified
 4. Ensure no uncommitted changes
 5. Leave app in working state (no broken features)
 

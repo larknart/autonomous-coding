@@ -122,8 +122,10 @@ async def run_autonomous_agent(
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if this is a fresh start or continuation
-    tests_file = project_dir / "feature_list.json"
-    is_first_run = not tests_file.exists()
+    # Check for either the old JSON file or the new SQLite database
+    json_file = project_dir / "feature_list.json"
+    db_file = project_dir / "features.db"
+    is_first_run = not json_file.exists() and not db_file.exists()
 
     if is_first_run:
         print("Fresh start - will use initializer agent")

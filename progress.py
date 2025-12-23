@@ -3,6 +3,7 @@ Progress Tracking Utilities
 ===========================
 
 Functions for tracking and displaying progress of the autonomous coding agent.
+Now uses the Feature API instead of reading feature_list.json directly.
 """
 
 import json
@@ -12,8 +13,48 @@ from datetime import datetime
 from pathlib import Path
 
 
+API_BASE_URL = "http://localhost:8765"
 WEBHOOK_URL = os.environ.get("PROGRESS_N8N_WEBHOOK_URL")
 PROGRESS_CACHE_FILE = ".progress_cache"
+
+
+def _api_get(endpoint: str) -> dict:
+    """
+    Make a GET request to the Feature API.
+
+    Args:
+        endpoint: API endpoint (e.g., "/features/stats")
+
+    Returns:
+        Parsed JSON response
+
+    Raises:
+        Exception if request fails
+    """
+    url = f"{API_BASE_URL}{endpoint}"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def count_passing_tests(project_dir: Path) -> tuple[int, int]:
+    """
+    Count passing and total tests via the Feature API.
+
+    Args:
+        project_dir: Directory containing the project (unused, kept for compatibility)
+
+    Returns:
+        (passing_count, total_count)
+    """
+    try:
+        stats = _api_get("/features/stats")
+        return stats["passing"], stats["total"]
+    except Exception as e:
+        # API not available - might be first run before server starts
+        # Fall back to checking if database exists
+        print(f"[API unavailable in count_passing_tests: {e}]")
+        return 0, 0
 
 
 def send_progress_webhook(passing: int, total: int, project_dir: Path) -> None:
@@ -23,41 +64,39 @@ def send_progress_webhook(passing: int, total: int, project_dir: Path) -> None:
 
     cache_file = project_dir / PROGRESS_CACHE_FILE
     previous = 0
-    previous_passing_tests = set()
+    previous_passing_ids = set()
 
-    # Read previous progress and passing test indices
+    # Read previous progress and passing feature IDs
     if cache_file.exists():
         try:
             cache_data = json.loads(cache_file.read_text())
             previous = cache_data.get("count", 0)
-            previous_passing_tests = set(cache_data.get("passing_indices", []))
-        except:
+            previous_passing_ids = set(cache_data.get("passing_ids", []))
+        except Exception:
             previous = 0
 
     # Only notify if progress increased
     if passing > previous:
-        # Find which tests are now passing
-        tests_file = project_dir / "feature_list.json"
+        # Find which features are now passing via API
         completed_tests = []
-        current_passing_indices = []
+        current_passing_ids = []
 
-        if tests_file.exists():
-            try:
-                with open(tests_file, "r") as f:
-                    tests = json.load(f)
-                for i, test in enumerate(tests):
-                    if test.get("passes", False):
-                        current_passing_indices.append(i)
-                        if i not in previous_passing_tests:
-                            # This test is newly passing
-                            desc = test.get("description", f"Test #{i+1}")
-                            category = test.get("category", "")
-                            if category:
-                                completed_tests.append(f"[{category}] {desc}")
-                            else:
-                                completed_tests.append(desc)
-            except:
-                pass
+        try:
+            # Get all passing features
+            data = _api_get("/features?passes=true&limit=1000")
+            for feature in data.get("features", []):
+                feature_id = feature.get("id")
+                current_passing_ids.append(feature_id)
+                if feature_id not in previous_passing_ids:
+                    # This feature is newly passing
+                    desc = feature.get("description", f"Feature #{feature_id}")
+                    category = feature.get("category", "")
+                    if category:
+                        completed_tests.append(f"[{category}] {desc}")
+                    else:
+                        completed_tests.append(desc)
+        except Exception as e:
+            print(f"[API error getting features: {e}]")
 
         payload = {
             "event": "test_progress",
@@ -68,69 +107,36 @@ def send_progress_webhook(passing: int, total: int, project_dir: Path) -> None:
             "tests_completed_this_session": passing - previous,
             "completed_tests": completed_tests,
             "project": project_dir.name,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
         try:
             req = urllib.request.Request(
                 WEBHOOK_URL,
-                data=json.dumps([payload]).encode('utf-8'),  # n8n expects array
-                headers={'Content-Type': 'application/json'}
+                data=json.dumps([payload]).encode("utf-8"),  # n8n expects array
+                headers={"Content-Type": "application/json"},
             )
             urllib.request.urlopen(req, timeout=5)
         except Exception as e:
             print(f"[Webhook notification failed: {e}]")
 
-        # Update cache with count and passing indices
-        cache_file.write_text(json.dumps({
-            "count": passing,
-            "passing_indices": current_passing_indices
-        }))
+        # Update cache with count and passing IDs
+        cache_file.write_text(
+            json.dumps({"count": passing, "passing_ids": current_passing_ids})
+        )
     else:
         # Update cache even if no change (for initial state)
         if not cache_file.exists():
-            tests_file = project_dir / "feature_list.json"
-            current_passing_indices = []
-            if tests_file.exists():
-                try:
-                    with open(tests_file, "r") as f:
-                        tests = json.load(f)
-                    for i, test in enumerate(tests):
-                        if test.get("passes", False):
-                            current_passing_indices.append(i)
-                except:
-                    pass
-            cache_file.write_text(json.dumps({
-                "count": passing,
-                "passing_indices": current_passing_indices
-            }))
-
-
-def count_passing_tests(project_dir: Path) -> tuple[int, int]:
-    """
-    Count passing and total tests in feature_list.json.
-
-    Args:
-        project_dir: Directory containing feature_list.json
-
-    Returns:
-        (passing_count, total_count)
-    """
-    tests_file = project_dir / "feature_list.json"
-
-    if not tests_file.exists():
-        return 0, 0
-
-    try:
-        with open(tests_file, "r") as f:
-            tests = json.load(f)
-
-        total = len(tests)
-        passing = sum(1 for test in tests if test.get("passes", False))
-
-        return passing, total
-    except (json.JSONDecodeError, IOError):
-        return 0, 0
+            current_passing_ids = []
+            try:
+                data = _api_get("/features?passes=true&limit=1000")
+                for feature in data.get("features", []):
+                    current_passing_ids.append(feature.get("id"))
+            except Exception:
+                pass
+            cache_file.write_text(
+                json.dumps({"count": passing, "passing_ids": current_passing_ids})
+            )
 
 
 def print_session_header(session_num: int, is_initializer: bool) -> None:
@@ -152,4 +158,4 @@ def print_progress_summary(project_dir: Path) -> None:
         print(f"\nProgress: {passing}/{total} tests passing ({percentage:.1f}%)")
         send_progress_webhook(passing, total, project_dir)
     else:
-        print("\nProgress: feature_list.json not yet created")
+        print("\nProgress: No features in database yet")

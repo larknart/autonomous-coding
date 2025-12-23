@@ -9,42 +9,52 @@ Start by reading `app_spec.txt` in your working directory. This file contains
 the complete specification for what you need to build. Read it carefully
 before proceeding.
 
-### CRITICAL FIRST TASK: Create feature_list.json
+### CRITICAL FIRST TASK: Create Features via API
 
-Based on `app_spec.txt`, create a file called `feature_list.json` with 340 detailed
-end-to-end test cases (matching the feature_count in the spec). This file is the single source of truth for what
-needs to be built.
+Based on `app_spec.txt`, create features using the Feature API. The API stores features in a SQLite database,
+which is the single source of truth for what needs to be built.
 
-**Format:**
+**Creating Features:**
 
-```json
-[
-  {
-    "category": "functional",
-    "description": "Brief description of the feature and what this test verifies",
-    "steps": [
-      "Step 1: Navigate to relevant page",
-      "Step 2: Perform action",
-      "Step 3: Verify expected result"
-    ],
-    "passes": false
-  },
-  {
-    "category": "style",
-    "description": "Brief description of UI/UX requirement",
-    "steps": [
-      "Step 1: Navigate to page",
-      "Step 2: Take screenshot",
-      "Step 3: Verify visual requirements"
-    ],
-    "passes": false
-  }
-]
+Use the bulk create endpoint to add all features at once:
+
+```bash
+curl -X POST http://localhost:8765/features/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": [
+      {
+        "category": "functional",
+        "name": "Brief feature name",
+        "description": "Brief description of the feature and what this test verifies",
+        "steps": [
+          "Step 1: Navigate to relevant page",
+          "Step 2: Perform action",
+          "Step 3: Verify expected result"
+        ]
+      },
+      {
+        "category": "style",
+        "name": "Brief feature name",
+        "description": "Brief description of UI/UX requirement",
+        "steps": [
+          "Step 1: Navigate to page",
+          "Step 2: Take screenshot",
+          "Step 3: Verify visual requirements"
+        ]
+      }
+    ]
+  }'
 ```
 
-**Requirements for feature_list.json:**
+**Notes:**
+- IDs and priorities are assigned automatically based on order
+- All features start with `passes: false` by default
+- You can create features in batches if there are many (e.g., 50 at a time)
 
-- Test count must match the `feature_count` specified in app_spec.txt (currently 340)
+**Requirements for features:**
+
+- Feature count must match the `feature_count` specified in app_spec.txt (currently 340)
 - Reference tiers for other projects:
   - **Simple apps**: ~150 tests
   - **Medium apps**: ~250 tests
@@ -52,8 +62,8 @@ needs to be built.
 - Both "functional" and "style" categories
 - Mix of narrow tests (2-5 steps) and comprehensive tests (10+ steps)
 - At least 25 tests MUST have 10+ steps each (more for complex apps)
-- Order features by priority: fundamental features first
-- ALL tests start with "passes": false
+- Order features by priority: fundamental features first (the API assigns priority based on order)
+- All features start with `passes: false` automatically
 - Cover every feature in the spec exhaustively
 - **MUST include tests from ALL 20 mandatory categories below**
 
@@ -443,7 +453,7 @@ The feature_list.json must include tests that **actively verify real data** and 
 
 **CRITICAL INSTRUCTION:**
 IT IS CATASTROPHIC TO REMOVE OR EDIT FEATURES IN FUTURE SESSIONS.
-Features can ONLY be marked as passing (change "passes": false to "passes": true).
+Features can ONLY be marked as passing (via `PATCH /features/{id}` with `{"passes": true}`).
 Never remove features, never edit descriptions, never modify testing steps.
 This ensures no functionality is missed.
 
@@ -462,11 +472,13 @@ Base the script on the technology stack specified in `app_spec.txt`.
 
 Create a git repository and make your first commit with:
 
-- feature_list.json (complete with all features per complexity tier: 150+/250+/400+)
 - init.sh (environment setup script)
 - README.md (project overview and setup instructions)
+- Any initial project structure files
 
-Commit message: "Initial setup: feature_list.json, init.sh, and project structure"
+Note: Features are stored in the SQLite database (features.db), not in a JSON file.
+
+Commit message: "Initial setup: init.sh, project structure, and features created via API"
 
 ### FOURTH TASK: Create Project Structure
 
@@ -477,10 +489,15 @@ components mentioned in the spec.
 ### OPTIONAL: Start Implementation
 
 If you have time remaining in this session, you may begin implementing
-the highest-priority features from feature_list.json. Remember:
+the highest-priority features. Get the next feature with:
 
+```bash
+curl -s http://localhost:8765/features/next | jq
+```
+
+Remember:
 - Work on ONE feature at a time
-- Test thoroughly before marking "passes": true
+- Test thoroughly before marking as passing via API
 - Commit your progress before session ends
 
 ### ENDING THIS SESSION
@@ -489,7 +506,7 @@ Before your context fills up:
 
 1. Commit all work with descriptive messages
 2. Create `claude-progress.txt` with a summary of what you accomplished
-3. Ensure feature_list.json is complete and saved
+3. Verify features were created via API: `curl -s http://localhost:8765/features/stats | jq`
 4. Leave the environment in a clean, working state
 
 The next agent will continue from here with a fresh context window.

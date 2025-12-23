@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent import run_autonomous_agent
+from api.server import FeatureAPIServer
 
 
 # Configuration
@@ -103,8 +104,13 @@ def main() -> None:
             # Prepend generations/ to relative paths
             project_dir = Path("generations") / project_dir
 
-    # Run the agent
+    # Start the Feature API server
+    api_server = FeatureAPIServer(project_dir, port=8765)
+
     try:
+        api_server.start()
+
+        # Run the agent
         asyncio.run(
             run_autonomous_agent(
                 project_dir=project_dir,
@@ -118,6 +124,8 @@ def main() -> None:
     except Exception as e:
         print(f"\nFatal error: {e}")
         raise
+    finally:
+        api_server.stop()
 
 
 if __name__ == "__main__":
